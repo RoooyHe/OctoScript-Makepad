@@ -21,6 +21,7 @@
 
 pub mod kit;
 pub mod l0;
+pub mod l0check;
 pub mod material;
 
 use octoscript_render::{Attrs, NodeKind, UiNode};
