@@ -162,7 +162,7 @@ fn assemble(
         parts.push(octoscript_ui_l0::kit_pack::theme_source(&pack));
     }
     parts.push(read("_kit.octoscript")?);
-    parts.push(octoscript_ui_l0::kit::lower(&root));
+    parts.push(octoscript_ui_l0::kit::lower(root));
     let source = parts.join("\n");
     // The lab is offline: a source capability without an adapter fails the
     // checked VM. Fixture data belongs in the explicit host data argument —
