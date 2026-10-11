@@ -4,7 +4,7 @@
 //! decidable without running it: the profile check (`check_ui_l0_named`) reads
 //! syntax, level and header; realization (`realize`) binds the card against
 //! data and answers every name it reads; the kit lowering
-//! (`octoscript-makepad`'s `l0::prepare_with_state`, injected by the binary)
+//! (`octoscript-makepad`'s `l0::prepare_offline`, injected by the binary)
 //! assembles the palette, the derivations and the kit body and evaluates the
 //! result in the checked Splash VM. All three already run inside card-host,
 //! AppCard and the shells — this module puts them on the command line, where
@@ -130,7 +130,7 @@ pub struct LiftOutcome {
 }
 
 /// The kit lowering, injected by the binary: this crate's
-/// `l0::prepare_with_state`, which realizes the card, assembles the mood's
+/// `l0::prepare_offline`, which realizes the card, assembles the mood's
 /// palette chain and evaluates the assembled source in the checked VM.
 pub type Lower<'a> = dyn Fn(&str, &serde_json::Value, &Path) -> Result<LiftOutcome, String> + 'a;
 
@@ -563,6 +563,11 @@ pub fn check_file(path: &Path, inv: &Invocation, kit: Option<&Path>, lower: Opti
     // The kit lowering: assemble the mood's palette chain and the kit body,
     // then evaluate the assembled source in the checked VM. Its failure is a
     // message, not a position: the fault is in the assembly, not the card.
+    //
+    // A lowering that is not available is a note when the tier was not asked
+    // for by name — the default tier promises what is available, and an
+    // embedder without a renderer is not a card's fault — and an error when it
+    // was: the caller demanded a check that cannot run.
     if inv.tier.runs_lift() && profile.valid {
         match (kit, lower) {
             (Some(kit), Some(lower)) => match lower(&source, &data, kit) {
@@ -578,10 +583,17 @@ pub fn check_file(path: &Path, inv: &Invocation, kit: Option<&Path>, lower: Opti
                 }
                 Err(message) => report.error("l0.lift", None, None, message),
             },
+            (Some(_), None) => {
+                let message = "lift skipped: no kit lowering is linked into this build";
+                if inv.tier_explicit {
+                    report.error("l0.lift", None, None, message);
+                } else {
+                    report.notes.push(message.to_owned());
+                }
+            }
             (None, _) => report
                 .notes
                 .push("lift skipped: no kit directory found (pass --kit DIR or set OCTOSCRIPT_L0_KIT)".to_owned()),
-            (_, None) => report.error("l0.lift", None, None, "no kit lowering is linked into this build"),
         }
     }
 
