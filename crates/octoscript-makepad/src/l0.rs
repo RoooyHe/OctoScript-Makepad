@@ -47,6 +47,73 @@ pub fn prepare(card: &str, data: &serde_json::Value, dir: &Path) -> Result<Prepa
 pub fn prepare_with_state(card: &str, data: &serde_json::Value, state: &octoscript_ui_l0::InstanceStore, dir: &Path) -> Result<PreparedCard, String> {
     let report = octoscript_ui_l0::realize_with_state(card, data, state, Default::default());
     let root = report.complete_root()?;
+    assemble(root, card, data, dir, |_, _| {})
+}
+
+/// Assemble and evaluate a realized card for a checker with no live host.
+///
+/// The same assembly as [`prepare_with_state`], with one difference. Every
+/// value the data does not answer is lowered to a live `sys.*` call — a
+/// pending source is the first frame a host draws — and a bare VM has no
+/// `sys`, so the first such call ends the evaluation and the whole card
+/// evaluates to nil. A checker wants the card's shape, not its data, so those
+/// calls are answered with nothing: an empty string, or zero for the two
+/// capabilities whose result feeds arithmetic in the kit.
+///
+/// A host with real capabilities wants the opposite, and keeps it:
+/// `prepare_with_state` fails on an unanswered capability, which is the right
+/// answer when something real should have answered it.
+pub fn prepare_offline(card: &str, data: &serde_json::Value, state: &octoscript_ui_l0::InstanceStore, dir: &Path) -> Result<PreparedCard, String> {
+    let report = octoscript_ui_l0::realize_with_state(card, data, state, Default::default());
+    let root = report.complete_root()?;
+    assemble(root, card, data, dir, |source, vm| register_missing_data_stubs(vm, source))
+}
+
+/// One empty answer per `sys.<name>(` the assembled source mentions.
+///
+/// Scanned rather than listed: the set of capabilities a card can reach grows,
+/// and a list goes stale in the one place nobody looks — the checker would
+/// then fail a valid card for a capability added after it was written. The
+/// two numeric-by-name capabilities answer zero, because their result feeds
+/// arithmetic in the kit and a string would fail it.
+fn register_missing_data_stubs(vm: &mut octoscript_render::makepad_script::ScriptVm, source: &str) {
+    use octoscript_render::makepad_script::makepad_live_id::*;
+    use octoscript_render::makepad_script::ScriptValue;
+
+    let mut names: Vec<&str> = source
+        .match_indices("sys.")
+        .map(|(at, _)| &source[at + 4..])
+        .filter_map(|rest| {
+            let end = rest.find(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))?;
+            (end > 0 && rest[end..].starts_with('(')).then(|| &rest[..end])
+        })
+        .collect();
+    names.sort();
+    names.dedup();
+
+    let sys = vm.bx.heap.new_object();
+    for name in names {
+        let f = if matches!(name, "num" | "geocodenum") {
+            octoscript_render::add_global_fn(vm, &[], |_, _| ScriptValue::from_f64(0.0))
+        } else {
+            octoscript_render::add_global_fn(vm, &[], |vm, _| vm.bx.heap.new_string_from_str(""))
+        };
+        vm.bx.heap.set_value_def(sys, LiveId::from_str(name).into(), f);
+    }
+    vm.set_injected_global(id!(sys), sys.into());
+}
+
+/// The mood's palette chain, the kit body and the card's own lowering,
+/// evaluated. `register` runs before the evaluation and sees the assembled
+/// source, which is what a stub needs: which `sys.*` calls the lowering
+/// emitted is only known once it has emitted them.
+fn assemble(
+    root: &octoscript_ui_l0::UiNode,
+    card: &str,
+    data: &serde_json::Value,
+    dir: &Path,
+    register: impl FnOnce(&str, &mut octoscript_render::makepad_script::ScriptVm),
+) -> Result<PreparedCard, String> {
     let mood = octoscript_ui_l0::card_theme(card).unwrap_or_else(|| "dark".into());
     if octoscript_ui_l0::kit_pack::contains(root) {
         if !octoscript_ui_l0::card_theme_axes(card).is_empty() {
@@ -98,8 +165,10 @@ pub fn prepare_with_state(card: &str, data: &serde_json::Value, state: &octoscri
     parts.push(octoscript_ui_l0::kit::lower(&root));
     let source = parts.join("\n");
     // The lab is offline: a source capability without an adapter fails the
-    // checked VM. Fixture data belongs in the explicit host data argument.
-    let tree = octoscript_render::build(&source, |_| {})
+    // checked VM. Fixture data belongs in the explicit host data argument —
+    // unless the caller registered the missing-data stubs, which is what a
+    // checker with no host does (see prepare_offline).
+    let tree = octoscript_render::build(&source, |vm| register(&source, vm))
         .ok_or_else(|| "assembled L0 card failed checked Splash evaluation".to_string())?;
     Ok(PreparedCard { source, tree, native_components: false })
 }
