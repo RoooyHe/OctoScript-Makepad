@@ -35,11 +35,11 @@ fn main() -> ExitCode {
                 // An empty instance store: the command line has no live state,
                 // and the first frame is what a host renders before anything
                 // answers — which is the frame a creator wants checked.
-                let prepared = crate::l0::prepare_with_state(source, data, &Default::default(), kit)?;
+                let prepared = octoscript_makepad::l0::prepare_with_state(source, data, &Default::default(), kit)?;
                 Ok(l0check::LiftOutcome {
                     nodes: count_nodes(&prepared.tree),
-                    texts: crate::l0::texts(&prepared.tree).len(),
-                    images: crate::l0::images(&prepared.tree).len(),
+                    texts: octoscript_makepad::l0::texts(&prepared.tree).len(),
+                    images: octoscript_makepad::l0::images(&prepared.tree).len(),
                     native_kit: prepared.native_components,
                 })
             };
