@@ -1,6 +1,6 @@
 //! The l0check core's behaviour. Self-contained: every card is inline, so the
-//! tests need no sibling checkout and no kit on disk, and every assertion is
-//! about the core's own API rather than about what a checkout beside it holds.
+//! tests need no sibling checkout and no kit on disk. Ported verbatim to
+//! Octoscript-Makepad as `crates/octoscript-makepad/tests/l0check.rs`.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -181,14 +181,14 @@ fn a_fixture_beside_the_card_is_read() {
     // The observable proof the sibling fixture is read: a broken one is fatal,
     // and it names the file it read.
     write(&dir, "page.data.json", "{not json");
-    let (status, _, stderr) = run(&invocation(vec![card.clone()], Tier::Bind), None);
-    assert_eq!(status, 2, "{stderr}");
-    assert!(stderr.contains("page.data.json"), "{stderr}");
+    let (status, stdout, _) = run(&invocation(vec![card.clone()], Tier::Bind), None);
+    assert_eq!(status, 2);
+    assert!(stdout.contains("page.data.json"), "{stdout}");
     // A fixture that parses but is not an object of names is fatal too.
     write(&dir, "page.data.json", "[1, 2, 3]");
-    let (status, _, stderr) = run(&invocation(vec![card.clone()], Tier::Bind), None);
-    assert_eq!(status, 2, "{stderr}");
-    assert!(stderr.contains("JSON object"), "{stderr}");
+    let (status, stdout, _) = run(&invocation(vec![card.clone()], Tier::Bind), None);
+    assert_eq!(status, 2);
+    assert!(stdout.contains("JSON object"), "{stdout}");
     // A good one loads, and the card binds clean.
     write(&dir, "page.data.json", "{\"greeting\": \"hello\"}");
     let report = check(&card, Tier::Bind);
@@ -401,9 +401,21 @@ fn a_bad_fixture_is_a_usage_error() {
     let dir = tempdir("bad-fixture");
     let card = write(&dir, "page.card", CLEAN);
     let data = write(&dir, "data.json", "{not json");
-    let mut inv = invocation(vec![card], Tier::Bind);
+    let mut inv = invocation(vec![card.clone()], Tier::Bind);
     inv.data = Some(data);
-    let (status, _, stderr) = run(&inv, None);
+    let (status, stdout, stderr) = run(&inv, None);
     assert_eq!(status, 2, "{stderr}");
+    // The report carries it: the file that will not parse is named on stdout,
+    // and nothing is repeated on stderr.
+    assert!(stdout.contains("data.json"), "{stdout}");
+    assert!(stderr.is_empty(), "{stderr}");
+    // The report is still printed: a JSON reader gets the contract, with the
+    // fatal named, and the exit status says which class of problem it was.
+    inv.json = true;
+    let (status, stdout, _) = run(&inv, None);
+    assert_eq!(status, 2);
+    let value: serde_json::Value = serde_json::from_str(&stdout).expect("json report");
+    assert!(value["files"][0]["fatal"].as_str().expect("fatal").contains("data.json"));
+    assert_eq!(value["summary"]["error"], 1);
     let _ = fs::remove_dir_all(&dir);
 }
