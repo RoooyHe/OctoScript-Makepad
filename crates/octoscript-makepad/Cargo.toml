@@ -15,6 +15,14 @@ octoscript-render = { path = "../octoscript-render" }
 octoscript-ui-l0 = { workspace = true }
 serde_json = "1"
 
+[[bin]]
+# l0check: L0 card validation for the command line. It lives here because the
+# kit lowering it runs (l0::prepare_with_state) does, and because this crate
+# carries no makepad-platform/draw/widgets lineage — the binary builds and runs
+# anywhere cargo does, with no window.
+name = "l0check"
+path = "src/bin/l0check.rs"
+
 [[example]]
 name = "translate"
 path = "examples/translate.rs"
