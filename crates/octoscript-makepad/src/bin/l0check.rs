@@ -2,10 +2,11 @@
 //!
 //! The core is `l0check` (this crate's module); this binary is the command
 //! line around it and the one piece that needs a renderer: the kit lowering,
-//! which is `l0::prepare_with_state` — realize the card, assemble the mood's
+//! which is `l0::prepare_offline` — realize the card, assemble the mood's
 //! palette chain and the kit body, and evaluate the assembled source in the
-//! checked VM, exactly as a host does. See `l0check`'s module docs for the
-//! tiers, the output contract and the exit codes.
+//! checked VM, with the missing-data stubs a checker without a live host
+//! needs. See `l0check`'s module docs for the tiers, the output contract and
+//! the exit codes.
 
 use std::io::Write;
 use std::path::Path;
@@ -35,7 +36,7 @@ fn main() -> ExitCode {
                 // An empty instance store: the command line has no live state,
                 // and the first frame is what a host renders before anything
                 // answers — which is the frame a creator wants checked.
-                let prepared = octoscript_makepad::l0::prepare_with_state(source, data, &Default::default(), kit)?;
+                let prepared = octoscript_makepad::l0::prepare_offline(source, data, &Default::default(), kit)?;
                 Ok(l0check::LiftOutcome {
                     nodes: count_nodes(&prepared.tree),
                     texts: octoscript_makepad::l0::texts(&prepared.tree).len(),
