@@ -449,3 +449,22 @@ fn authored_selected_chip_tokens_survive_realization_and_native_lowering() {
     assert!(ui.contains("text: \"All\""));
     assert!(ui.contains("text: \"Today\""));
 }
+
+#[test]
+fn a_card_whose_sources_are_pending_still_lowers_offline() {
+    // The reference cards read their live values through `sys.*`, and the kit
+    // lowering emits a call for every value the data does not answer — a
+    // pending source is the first frame a host draws. A bare VM has no `sys`,
+    // so `prepare_with_state` fails the whole card: correct for a host with
+    // real capabilities, wrong for a checker that wants the card's shape.
+    let card = include_str!("../../../../Octoscript/crates/octoscript-ui-l0/tests/fixtures/weather.card");
+    let kit = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../components/l0");
+    assert!(
+        octoscript_makepad::l0::prepare_with_state(card, &serde_json::json!({}), &Default::default(), &kit).is_err(),
+        "a bare VM has no sys, so an unanswered capability ends the evaluation"
+    );
+    let prepared = octoscript_makepad::l0::prepare_offline(card, &serde_json::json!({}), &Default::default(), &kit)
+        .expect("the missing-data stubs answer the pending sources");
+    assert!(!prepared.tree.children.is_empty(), "{:?}", prepared.source);
+    assert!(prepared.source.contains("_kit"), "the assembled source carries the kit body");
+}
