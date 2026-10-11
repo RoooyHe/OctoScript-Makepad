@@ -361,17 +361,17 @@ pub fn run(inv: &Invocation, lower: Option<&Lower>, out: &mut dyn Write, err: &m
         .map(|path| check_file(path, inv, kit.as_deref(), lower))
         .collect();
 
-    // A broken fixture is the caller's problem, not the card's: it is reported
-    // on stderr and exits with the usage status, before any finding is counted.
-    if let Some(fatal) = reports.iter().find_map(|report| report.fatal.clone()) {
-        let _ = writeln!(err, "{TOOL_NAME}: {fatal}");
-        return 2;
-    }
-
     if inv.json {
         print_json(&reports, inv, kit.as_deref(), out);
     } else {
         print_human(&reports, out);
+    }
+
+    // A broken fixture is the caller's problem, not the card's: the report
+    // carries it (printed above, with the file that will not parse), and the
+    // run then exits with the usage status rather than the findings status.
+    if reports.iter().any(|report| report.fatal.is_some()) {
+        return 2;
     }
 
     if reports
@@ -615,6 +615,9 @@ fn load_data(card: &Path, source: &str, inv: &Invocation) -> Result<serde_json::
 }
 
 fn read_json(path: &Path) -> Result<serde_json::Value, String> {
+    if !path.is_file() {
+        return Err(format!("{}: no such file", path.display()));
+    }
     let text = fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))?;
     serde_json::from_str(&text).map_err(|e| format!("{}: {e}", path.display()))
 }
@@ -633,12 +636,20 @@ fn print_human(reports: &[FileReport], out: &mut dyn Write) {
                 warn += 1;
                 "warn"
             }
+            None if report.fatal.is_some() => {
+                error += 1;
+                "ERR "
+            }
             None => {
                 ok += 1;
                 "ok  "
             }
         };
         let name = report.path.display();
+        if let Some(fatal) = &report.fatal {
+            let _ = writeln!(out, "  {status} {name} — {fatal}");
+            continue;
+        }
         if report.parts.is_empty() {
             let _ = writeln!(out, "  {status} {name}");
         } else {
@@ -712,6 +723,7 @@ fn tally(reports: &[FileReport]) -> (usize, usize, usize) {
         match report.severity() {
             Some(Severity::Error) => error += 1,
             Some(Severity::Warn) => warn += 1,
+            None if report.fatal.is_some() => error += 1,
             None => ok += 1,
         }
     }
