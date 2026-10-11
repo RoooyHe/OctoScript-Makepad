@@ -310,10 +310,30 @@ fn a_missing_lowering_is_an_error_not_a_silent_pass() {
     let card = write(&dir, "page.card", CLEAN);
     let kit = kit_dir(&dir);
     let mut inv = invocation(vec![card], Tier::Lift);
+    // Asked for by name: an unavailable lowering is an error, not a pass.
+    inv.tier_explicit = true;
     inv.kit = Some(kit);
     let (status, stdout, _) = run(&inv, None);
     assert_eq!(status, 1);
     assert!(stdout.contains("no kit lowering is linked"), "{stdout}");
+    let _ = fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn an_unasked_for_lowering_that_is_not_linked_is_a_note() {
+    let dir = tempdir("no-lower-default");
+    let card = write(&dir, "page.card", CLEAN);
+    let kit = kit_dir(&dir);
+    // The default tier, with a kit on hand but no lowering linked (an embedder
+    // without a renderer): the card is not failed for what the tool cannot do.
+    let mut inv = invocation(vec![card.clone()], Tier::All);
+    inv.kit = Some(kit);
+    let report = l0check::check_file(&card, &inv, inv.kit.as_deref(), None);
+    assert!(report.findings.is_empty(), "{report:?}");
+    assert_eq!(report.notes, vec!["lift skipped: no kit lowering is linked into this build".to_owned()]);
+    let (status, stdout, _) = run(&inv, None);
+    assert_eq!(status, 0, "{stdout}");
+    assert!(stdout.contains("note: lift skipped: no kit lowering"), "{stdout}");
     let _ = fs::remove_dir_all(&dir);
 }
 
